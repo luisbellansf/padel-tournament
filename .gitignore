@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Environment – NIEMALS committen
+.env
+.env.local
+.env.*.local
+
+# Build-Ausgaben
+dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# OS-Dateien
+.DS_Store
+Thumbs.db
+
+# Prisma Dev-DB
+/backend/prisma/migrations/dev.db*

@@ -1,0 +1,6 @@
+[build]
+buildCommand = "npm install --prefix backend && npm install --prefix frontend && npm run build --prefix frontend && npm run prisma:generate --prefix backend"
+
+[deploy]
+startCommand = "cd backend && npm start"
+healthcheckPath = "/api/health"

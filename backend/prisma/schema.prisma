@@ -1,0 +1,115 @@
+// Prisma schema – MySQL
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  PLAYER
+}
+
+enum Skill {
+  ASSOCIATE
+  CONSULTANT
+  EXPERT
+}
+
+enum Format {
+  ROUND_ROBIN
+  KNOCKOUT
+  GROUP_KNOCKOUT
+  AMERICANO
+}
+
+enum Stage {
+  ROUND_ROBIN
+  GROUP
+  KNOCKOUT
+}
+
+enum TournamentStatus {
+  DRAFT
+  TEAMS_FORMED
+  RUNNING
+  FINISHED
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  name         String   @unique          // Benutzername – Login-Identifikator
+  email        String?  @unique          // optional
+  passwordHash String
+  role         Role     @default(PLAYER)
+  skillLevel   Skill    @default(ASSOCIATE)
+  createdAt    DateTime @default(now())
+
+  registrations Registration[]
+}
+
+model Tournament {
+  id        Int              @id @default(autoincrement())
+  name      String
+  format    Format
+  status    TournamentStatus @default(DRAFT)
+  // Konfiguration als JSON: { numGroups, advancePerGroup, seed, ... }
+  config    Json?
+  createdAt DateTime         @default(now())
+
+  registrations Registration[]
+  teams         Team[]
+  matches       Match[]
+}
+
+// Anmeldung eines Spielers zu einem Turnier (inkl. optionalem Wunschpartner)
+model Registration {
+  id              Int        @id @default(autoincrement())
+  tournament      Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  tournamentId    Int
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          Int
+  // Wunschpartner (gegenseitig -> manuelles Team)
+  desiredPartnerId Int?
+  teamId          Int?
+  // Turnierspezifisches Skill-Level (gesetzt wenn allowSkill=true im Turnier)
+  skillLevel      Skill?
+  createdAt       DateTime   @default(now())
+
+  @@unique([tournamentId, userId])
+}
+
+model Team {
+  id           Int        @id @default(autoincrement())
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  tournamentId Int
+  name         String
+  manual       Boolean    @default(false)
+  totalSkill   Int        @default(0)
+  // Spieler-IDs als JSON-Array (2 Spieler)
+  playerIds    Json
+
+  matchesAsA   Match[]    @relation("TeamA")
+  matchesAsB   Match[]    @relation("TeamB")
+}
+
+model Match {
+  id           Int        @id @default(autoincrement())
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  tournamentId Int
+  stage        Stage
+  groupName    String?
+  round        Int
+  slot         Int
+  teamA        Team?      @relation("TeamA", fields: [teamAId], references: [id])
+  teamAId      Int?
+  teamB        Team?      @relation("TeamB", fields: [teamBId], references: [id])
+  teamBId      Int?
+  scoreA       Int?
+  scoreB       Int?
+  winnerTeamId Int?
+  playedAt     DateTime?
+}
