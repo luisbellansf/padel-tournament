@@ -37,6 +37,7 @@ export default function Dashboard() {
     minPlayers: 8, allowSkill: false,
     // Americano
     winScore: 21, numCourts: 2, fullRotation: false, numRounds: 7, hideStandings: false,
+    timeBasedGame: false, pointsForWin: 2, pointsForDraw: 1, allowDraw: true,
     // Group + KO
     numGroups: 2, advancePerGroup: 2,
   });
@@ -56,10 +57,17 @@ export default function Dashboard() {
         allowSkill: form.allowSkill,
       };
       if (form.format === 'AMERICANO') {
-        config.winScore      = Number(form.winScore);
+        config.timeBasedGame = form.timeBasedGame;
         config.numCourts     = Number(form.numCourts);
         config.fullRotation  = form.fullRotation;
         config.hideStandings = form.hideStandings;
+        if (!form.timeBasedGame) {
+          config.winScore = Number(form.winScore);
+        } else {
+          config.pointsForWin  = Number(form.pointsForWin);
+          config.pointsForDraw = form.allowDraw ? Number(form.pointsForDraw) : 0;
+          config.allowDraw     = form.allowDraw;
+        }
         if (!form.fullRotation) config.numRounds = Number(form.numRounds);
       }
       if (form.format === 'GROUP_KNOCKOUT') {
@@ -124,11 +132,43 @@ export default function Dashboard() {
             </div>
             {form.format === 'AMERICANO' && (
               <>
-                <div>
-                  <label>Siegpunkte</label>
-                  <input type="number" min="5" max="200" value={form.winScore}
-                    onChange={(e) => setForm({ ...form, winScore: e.target.value })} />
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label>Spielmodus</label>
+                  <div className="row" style={{ gap: 8, marginTop: 6 }}>
+                    {[{ v: false, l: 'Punktebasiert' }, { v: true, l: 'Zeitbasiert' }].map(({ v, l }) => (
+                      <button key={String(v)} type="button"
+                        onClick={() => setForm({ ...form, timeBasedGame: v })}
+                        style={{
+                          padding: '7px 14px', fontSize: '0.82rem', borderRadius: 8,
+                          fontWeight: 700, cursor: 'pointer', border: 'none',
+                          background: form.timeBasedGame === v
+                            ? 'linear-gradient(135deg, #0051D4, #0025D1)' : 'var(--bg)',
+                          color: form.timeBasedGame === v ? '#fff' : 'var(--text-muted)',
+                          outline: form.timeBasedGame === v ? 'none' : '1px solid var(--border)',
+                        }}
+                      >{l}</button>
+                    ))}
+                  </div>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '6px 0 0' }}>
+                    {form.timeBasedGame
+                      ? 'Spiele laufen auf Zeit – Turnierpunkte werden für Sieg/Unentschieden vergeben.'
+                      : 'Gewinner ist, wer zuerst die Siegpunktzahl erreicht.'}
+                  </p>
                 </div>
+                {!form.timeBasedGame && (
+                  <div>
+                    <label>Siegpunkte</label>
+                    <input type="number" min="5" max="200" value={form.winScore}
+                      onChange={(e) => setForm({ ...form, winScore: e.target.value })} />
+                  </div>
+                )}
+                {form.timeBasedGame && (
+                  <div>
+                    <label>Turnierpunkte für Sieg</label>
+                    <input type="number" min="0" max="99" value={form.pointsForWin}
+                      onChange={(e) => setForm({ ...form, pointsForWin: e.target.value })} />
+                  </div>
+                )}
                 <div>
                   <label>Anzahl Courts</label>
                   <input type="number" min="1" max="20" value={form.numCourts}
@@ -163,6 +203,44 @@ export default function Dashboard() {
           {/* Americano: full-rotation + rounds + hide standings */}
           {form.format === 'AMERICANO' && (
             <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {/* Time-based: draw settings */}
+              {form.timeBasedGame && (
+                <>
+                  <div>
+                    <label>Unentschieden</label>
+                    <div className="row" style={{ gap: 8, marginTop: 6 }}>
+                      {[
+                        { v: true,  l: 'Erlaubt' },
+                        { v: false, l: 'Finalpunkt erforderlich' },
+                      ].map(({ v, l }) => (
+                        <button key={String(v)} type="button"
+                          onClick={() => setForm({ ...form, allowDraw: v })}
+                          style={{
+                            padding: '7px 14px', fontSize: '0.82rem', borderRadius: 8,
+                            fontWeight: 700, cursor: 'pointer', border: 'none',
+                            background: form.allowDraw === v
+                              ? 'linear-gradient(135deg, #0051D4, #0025D1)' : 'var(--bg)',
+                            color: form.allowDraw === v ? '#fff' : 'var(--text-muted)',
+                            outline: form.allowDraw === v ? 'none' : '1px solid var(--border)',
+                          }}
+                        >{l}</button>
+                      ))}
+                    </div>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '6px 0 0' }}>
+                      {form.allowDraw
+                        ? 'Gleichstand zählt als Unentschieden.'
+                        : 'Bei Gleichstand muss ein Finalpunkt ausgespielt werden.'}
+                    </p>
+                  </div>
+                  {form.allowDraw && (
+                    <div>
+                      <label>Turnierpunkte für Unentschieden</label>
+                      <input type="number" min="0" max="99" value={form.pointsForDraw}
+                        onChange={(e) => setForm({ ...form, pointsForDraw: e.target.value })} />
+                    </div>
+                  )}
+                </>
+              )}
               {/* Full rotation toggle */}
               <label style={{
                 display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
