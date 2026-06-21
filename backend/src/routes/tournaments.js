@@ -36,6 +36,10 @@ const createSchema = z.object({
       hideStandings:    z.boolean().optional(),                       // Americano: hide from players
       numGroups:        z.number().int().min(2).optional(),
       advancePerGroup:  z.number().int().min(1).optional(),
+      timeBasedGame:    z.boolean().optional(),
+      pointsForWin:     z.number().int().min(0).max(99).optional(),
+      pointsForDraw:    z.number().int().min(0).max(99).optional(),
+      allowDraw:        z.boolean().optional(),
     })
     .optional(),
 });
@@ -332,29 +336,38 @@ router.post('/:id/matches/:matchId/score', requireAdmin, ah(async (req, res) => 
   const parsed = scoreSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Ungültiges Ergebnis' });
   const { scoreA, scoreB } = parsed.data;
-  if (scoreA === scoreB) return res.status(400).json({ error: 'Unentschieden im K.o. nicht erlaubt' });
 
   const match = await prisma.match.findUnique({ where: { id: matchId } });
   if (!match) return res.status(404).json({ error: 'Match nicht gefunden' });
 
-  // Americano: validate that winner has exactly winScore and loser < winScore
   const tournament = await prisma.tournament.findUnique({
     where: { id: match.tournamentId },
     select: { format: true, config: true },
   });
+
   if (tournament?.format === 'AMERICANO') {
-    const winScore = tournament.config?.winScore ?? 11;
-    const maxScore = Math.max(scoreA, scoreB);
-    const minScore = Math.min(scoreA, scoreB);
-    if (maxScore !== winScore) {
-      return res.status(400).json({ error: `Das Gewinnerteam muss genau ${winScore} Punkte haben.` });
+    const timeBasedGame = tournament.config?.timeBasedGame ?? false;
+    if (timeBasedGame) {
+      const allowDraw = tournament.config?.allowDraw ?? true;
+      if (!allowDraw && scoreA === scoreB) {
+        return res.status(400).json({ error: 'Unentschieden nicht erlaubt – bitte Finalpunkt ausspielen.' });
+      }
+    } else {
+      const winScore = tournament.config?.winScore ?? 11;
+      const maxScore = Math.max(scoreA, scoreB);
+      const minScore = Math.min(scoreA, scoreB);
+      if (maxScore !== winScore) {
+        return res.status(400).json({ error: `Das Gewinnerteam muss genau ${winScore} Punkte haben.` });
+      }
+      if (minScore >= winScore) {
+        return res.status(400).json({ error: `Das Verliererteam darf höchstens ${winScore - 1} Punkte haben.` });
+      }
     }
-    if (minScore >= winScore) {
-      return res.status(400).json({ error: `Das Verliererteam darf höchstens ${winScore - 1} Punkte haben.` });
-    }
+  } else {
+    if (scoreA === scoreB) return res.status(400).json({ error: 'Unentschieden im K.o. nicht erlaubt' });
   }
 
-  const winnerTeamId = scoreA > scoreB ? match.teamAId : match.teamBId;
+  const winnerTeamId = scoreA > scoreB ? match.teamAId : scoreB > scoreA ? match.teamBId : null;
   const updated = await prisma.match.update({
     where: { id: matchId },
     data: { scoreA, scoreB, winnerTeamId, playedAt: new Date() },

@@ -630,29 +630,55 @@ function DeleteTournament({ tournamentId, name, onDeleted }) {
 ══════════════════════════════════════════════════════════ */
 
 function computeAmericanoStandings(t) {
+  const timeBasedGame = t.config?.timeBasedGame ?? false;
+  const pointsForWin  = t.config?.pointsForWin  ?? 2;
+  const pointsForDraw = t.config?.pointsForDraw  ?? 1;
+
   const players = {};
   t.registrations.forEach((r) => {
-    players[r.userId] = { userId: r.userId, name: r.user.name, roundsPlayed: 0, byes: 0, totalPoints: 0 };
+    players[r.userId] = {
+      userId: r.userId, name: r.user.name,
+      roundsPlayed: 0, byes: 0, totalPoints: 0,
+      wins: 0, draws: 0, losses: 0,
+    };
   });
 
-  // Count byes from config (stored when generating the schedule)
   (t.config?.americanoRounds ?? []).forEach((ar) => {
     (ar.sittingOut ?? []).forEach((uid) => {
       if (players[uid]) players[uid].byes++;
     });
   });
 
-  // Sum individual points from completed matches
   t.matches.forEach((m) => {
     if (m.scoreA == null) return;
     const tA = t.teams.find((x) => x.id === m.teamAId);
     const tB = t.teams.find((x) => x.id === m.teamBId);
-    (tA?.playerIds ?? []).forEach((uid) => {
-      if (players[uid]) { players[uid].totalPoints += m.scoreA; players[uid].roundsPlayed++; }
-    });
-    (tB?.playerIds ?? []).forEach((uid) => {
-      if (players[uid]) { players[uid].totalPoints += m.scoreB; players[uid].roundsPlayed++; }
-    });
+
+    if (timeBasedGame) {
+      const isDraw = m.scoreA === m.scoreB;
+      const aWon   = m.scoreA > m.scoreB;
+      (tA?.playerIds ?? []).forEach((uid) => {
+        if (!players[uid]) return;
+        players[uid].roundsPlayed++;
+        if (isDraw)    { players[uid].draws++;  players[uid].totalPoints += pointsForDraw; }
+        else if (aWon) { players[uid].wins++;   players[uid].totalPoints += pointsForWin; }
+        else           { players[uid].losses++; }
+      });
+      (tB?.playerIds ?? []).forEach((uid) => {
+        if (!players[uid]) return;
+        players[uid].roundsPlayed++;
+        if (isDraw)     { players[uid].draws++;  players[uid].totalPoints += pointsForDraw; }
+        else if (!aWon) { players[uid].wins++;   players[uid].totalPoints += pointsForWin; }
+        else            { players[uid].losses++; }
+      });
+    } else {
+      (tA?.playerIds ?? []).forEach((uid) => {
+        if (players[uid]) { players[uid].totalPoints += m.scoreA; players[uid].roundsPlayed++; }
+      });
+      (tB?.playerIds ?? []).forEach((uid) => {
+        if (players[uid]) { players[uid].totalPoints += m.scoreB; players[uid].roundsPlayed++; }
+      });
+    }
   });
 
   return Object.values(players)
@@ -662,10 +688,12 @@ function computeAmericanoStandings(t) {
 
 /* ─── Container ───────────────────────────────────────── */
 function AmericanoView({ t, isAdmin, onSave, tournamentId, onReload }) {
-  const standings   = computeAmericanoStandings(t);
-  const aroundsMeta = t.config?.americanoRounds ?? [];
-  const winScore    = t.config?.winScore ?? 11;
-  const hidden      = t.config?.hideStandings ?? false;
+  const standings     = computeAmericanoStandings(t);
+  const aroundsMeta   = t.config?.americanoRounds ?? [];
+  const winScore      = t.config?.winScore ?? 11;
+  const hidden        = t.config?.hideStandings ?? false;
+  const timeBasedGame = t.config?.timeBasedGame ?? false;
+  const allowDraw     = t.config?.allowDraw ?? true;
 
   const matchesByRound = {};
   t.matches.forEach((m) => { (matchesByRound[m.round] ||= []).push(m); });
@@ -693,7 +721,7 @@ function AmericanoView({ t, isAdmin, onSave, tournamentId, onReload }) {
         </div>
 
         {(!hidden || isAdmin) ? (
-          <AmericanoStandings standings={standings} dimmed={hidden && isAdmin} />
+          <AmericanoStandings standings={standings} dimmed={hidden && isAdmin} timeBasedGame={timeBasedGame} />
         ) : (
           <div style={{ textAlign: 'center', padding: '20px 0' }}>
             <div style={{ fontSize: '1.8rem', marginBottom: 8 }}>🙈</div>
@@ -723,6 +751,8 @@ function AmericanoView({ t, isAdmin, onSave, tournamentId, onReload }) {
           isAdmin={isAdmin}
           winScore={winScore}
           onSave={onSave}
+          timeBasedGame={timeBasedGame}
+          allowDraw={allowDraw}
         />
       ))}
     </>
@@ -730,9 +760,28 @@ function AmericanoView({ t, isAdmin, onSave, tournamentId, onReload }) {
 }
 
 /* ─── Standings table ─────────────────────────────────── */
-function AmericanoStandings({ standings, dimmed = false }) {
-  const hasData = standings.some((s) => s.totalPoints > 0 || s.byes > 0);
+function AmericanoStandings({ standings, dimmed = false, timeBasedGame = false }) {
+  const hasData = standings.some((s) => s.totalPoints > 0 || s.byes > 0 || s.roundsPlayed > 0);
   const medal = (i) => i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : null;
+
+  const cols = timeBasedGame
+    ? [
+        { k: 'pos',    l: 'Pos',    align: 'center' },
+        { k: 'name',   l: 'Spieler', align: 'left'  },
+        { k: 'rounds', l: 'Runden',  align: 'center' },
+        { k: 'byes',   l: 'Pausen',  align: 'center' },
+        { k: 'wins',   l: 'Siege',   align: 'center' },
+        { k: 'draws',  l: 'Unent.',  align: 'center' },
+        { k: 'losses', l: 'Niederl.', align: 'center' },
+        { k: 'pts',    l: 'T.Pkte',  align: 'center' },
+      ]
+    : [
+        { k: 'pos',    l: 'Pos',    align: 'center' },
+        { k: 'name',   l: 'Spieler', align: 'left'  },
+        { k: 'rounds', l: 'Runden',  align: 'center' },
+        { k: 'byes',   l: 'Pausen',  align: 'center' },
+        { k: 'pts',    l: 'Punkte',  align: 'center' },
+      ];
 
   return (
     <div style={{ opacity: dimmed ? 0.45 : 1, transition: 'opacity 0.2s' }}>
@@ -751,13 +800,7 @@ function AmericanoStandings({ standings, dimmed = false }) {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                {[
-                  { k: 'pos',    l: 'Pos',    align: 'center' },
-                  { k: 'name',   l: 'Spieler', align: 'left'  },
-                  { k: 'rounds', l: 'Runden',  align: 'center' },
-                  { k: 'byes',   l: 'Pausen',  align: 'center' },
-                  { k: 'pts',    l: 'Punkte',  align: 'center' },
-                ].map(({ k, l, align }) => (
+                {cols.map(({ k, l, align }) => (
                   <th key={k} style={{
                     padding: '7px 10px', textAlign: align,
                     fontSize: '0.7rem', fontWeight: 800,
@@ -780,6 +823,13 @@ function AmericanoStandings({ standings, dimmed = false }) {
                   <td style={{ padding: '9px 10px', fontWeight: 700 }}>{s.name}</td>
                   <td style={{ padding: '9px 10px', textAlign: 'center', color: 'var(--text-muted)' }}>{s.roundsPlayed}</td>
                   <td style={{ padding: '9px 10px', textAlign: 'center', color: 'var(--text-muted)' }}>{s.byes}</td>
+                  {timeBasedGame && (
+                    <>
+                      <td style={{ padding: '9px 10px', textAlign: 'center', color: '#059669', fontWeight: 700 }}>{s.wins}</td>
+                      <td style={{ padding: '9px 10px', textAlign: 'center', color: '#d97706', fontWeight: 700 }}>{s.draws}</td>
+                      <td style={{ padding: '9px 10px', textAlign: 'center', color: 'var(--text-muted)' }}>{s.losses}</td>
+                    </>
+                  )}
                   <td style={{
                     padding: '9px 10px', textAlign: 'center',
                     fontWeight: 900, fontSize: '1.05rem',
@@ -796,7 +846,7 @@ function AmericanoStandings({ standings, dimmed = false }) {
 }
 
 /* ─── Single round card ───────────────────────────────── */
-function AmericanoRoundCard({ roundNum, matches, sittingOut, teams, registrations, isAdmin, winScore, onSave }) {
+function AmericanoRoundCard({ roundNum, matches, sittingOut, teams, registrations, isAdmin, winScore, onSave, timeBasedGame = false, allowDraw = true }) {
   const pName = (uid) => registrations.find((r) => r.userId === uid)?.user?.name ?? `#${uid}`;
   const teamLabel = (teamId) => {
     const team = teams.find((t) => t.id === teamId);
@@ -837,6 +887,8 @@ function AmericanoRoundCard({ roundNum, matches, sittingOut, teams, registration
           isAdmin={isAdmin}
           winScore={winScore}
           onSave={onSave}
+          timeBasedGame={timeBasedGame}
+          allowDraw={allowDraw}
         />
       ))}
 
@@ -857,25 +909,38 @@ function AmericanoRoundCard({ roundNum, matches, sittingOut, teams, registration
 }
 
 /* ─── Single match row (winner-selection UI) ─────────── */
-function AmericanoMatchRow({ courtNum, m, teamALabel, teamBLabel, isAdmin, winScore = 11, onSave }) {
-  const [winner, setWinner]         = useState(null);   // 'A' | 'B' | null
+function AmericanoMatchRow({ courtNum, m, teamALabel, teamBLabel, isAdmin, winScore = 11, onSave, timeBasedGame = false, allowDraw = true }) {
+  // Points-based state
+  const [winner, setWinner]         = useState(null);
   const [loserScore, setLoserScore] = useState('');
+  // Time-based state
+  const [scoreAInput, setScoreAInput] = useState('');
+  const [scoreBInput, setScoreBInput] = useState('');
 
-  const played = m.scoreA != null;
-  const winA   = played && m.scoreA > m.scoreB;
-  const winB   = played && m.scoreB > m.scoreA;
+  const played  = m.scoreA != null;
+  const winA    = played && m.scoreA > m.scoreB;
+  const winB    = played && m.scoreB > m.scoreA;
+  const isDraw  = played && m.scoreA === m.scoreB;
 
-  // Loser score must be a non-negative integer strictly less than winScore
+  // Time-based validation
+  const scoreANum   = scoreAInput !== '' ? Number(scoreAInput) : NaN;
+  const scoreBNum   = scoreBInput !== '' ? Number(scoreBInput) : NaN;
+  const bothValid   = !isNaN(scoreANum) && !isNaN(scoreBNum) && scoreANum >= 0 && scoreBNum >= 0
+                      && Number.isInteger(scoreANum) && Number.isInteger(scoreBNum);
+  const drawBlocked = bothValid && scoreANum === scoreBNum && !allowDraw;
+
+  // Points-based validation
   const loserNum   = loserScore !== '' ? Number(loserScore) : NaN;
   const loserValid = !isNaN(loserNum) && loserNum >= 0 && loserNum < winScore;
 
-  const confirm = () => {
+  const confirmTime = () => { if (bothValid && !drawBlocked) onSave(m.id, scoreANum, scoreBNum); };
+  const confirmPoints = () => {
     if (!loserValid) return;
     if (winner === 'A') onSave(m.id, winScore, loserNum);
     else if (winner === 'B') onSave(m.id, loserNum, winScore);
   };
 
-  const TEAM_BTN = (side, label, isWin) => {
+  const TEAM_BTN = (side, label) => {
     const selected = winner === side;
     return (
       <button
@@ -884,25 +949,25 @@ function AmericanoMatchRow({ courtNum, m, teamALabel, teamBLabel, isAdmin, winSc
           flex: 1, padding: '9px 12px', borderRadius: 10, cursor: 'pointer',
           fontWeight: 700, fontSize: '0.85rem', border: '2px solid',
           transition: 'all 0.12s',
-          background: selected
-            ? 'linear-gradient(135deg, #0051D4, #0025D1)'
-            : isWin ? 'linear-gradient(135deg, #0051D4, #0025D1)' : 'var(--bg)',
-          color: selected || isWin ? '#fff' : 'var(--text)',
-          borderColor: selected || isWin ? 'var(--sf-digital)' : 'var(--border)',
+          background: selected ? 'linear-gradient(135deg, #0051D4, #0025D1)' : 'var(--bg)',
+          color: selected ? '#fff' : 'var(--text)',
+          borderColor: selected ? 'var(--sf-digital)' : 'var(--border)',
           textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}
       >
         {label || '—'}
-        {selected && !played && <span style={{ marginLeft: 6, opacity: 0.8 }}>✓</span>}
+        {selected && <span style={{ marginLeft: 6, opacity: 0.8 }}>✓</span>}
       </button>
     );
   };
+
+  const scoreColor = isDraw ? '#d97706' : 'var(--sf-digital)';
 
   return (
     <div style={{
       padding: '10px 12px', borderRadius: 10,
       background: 'var(--bg)', marginBottom: 8,
-      border: `1px solid ${played ? 'var(--border)' : winner ? 'var(--sf-blue-4)' : 'var(--border)'}`,
+      border: `1px solid ${played ? 'var(--border)' : (winner || bothValid) ? 'var(--sf-blue-4)' : 'var(--border)'}`,
     }}>
       {/* Court label + teams */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -917,24 +982,60 @@ function AmericanoMatchRow({ courtNum, m, teamALabel, teamBLabel, isAdmin, winSc
           /* ── Result display ── */
           <>
             <div style={{ flex: 1, fontWeight: 700, fontSize: '0.88rem', textAlign: 'right',
-              color: winA ? 'var(--sf-digital)' : 'var(--text-muted)', textDecoration: winA ? 'none' : 'line-through' }}>
+              color: winA ? 'var(--sf-digital)' : isDraw ? 'var(--text)' : 'var(--text-muted)',
+              textDecoration: (!winA && !isDraw) ? 'line-through' : 'none' }}>
               {teamALabel || '—'}
             </div>
-            <span style={{ fontWeight: 900, fontSize: '1.05rem', color: 'var(--sf-digital)',
-              flexShrink: 0, minWidth: 54, textAlign: 'center' }}>
-              {m.scoreA} : {m.scoreB}
-            </span>
+            <div style={{ flexShrink: 0, minWidth: 54, textAlign: 'center' }}>
+              <span style={{ fontWeight: 900, fontSize: '1.05rem', color: scoreColor }}>
+                {m.scoreA} : {m.scoreB}
+              </span>
+              {isDraw && (
+                <div style={{ fontSize: '0.6rem', color: '#d97706', fontWeight: 800, letterSpacing: '0.04em', marginTop: 1 }}>
+                  UNENTSCHIEDEN
+                </div>
+              )}
+            </div>
             <div style={{ flex: 1, fontWeight: 700, fontSize: '0.88rem',
-              color: winB ? 'var(--sf-digital)' : 'var(--text-muted)', textDecoration: winB ? 'none' : 'line-through' }}>
+              color: winB ? 'var(--sf-digital)' : isDraw ? 'var(--text)' : 'var(--text-muted)',
+              textDecoration: (!winB && !isDraw) ? 'line-through' : 'none' }}>
+              {teamBLabel || '—'}
+            </div>
+          </>
+        ) : isAdmin && timeBasedGame ? (
+          /* ── Time-based: direct score entry ── */
+          <>
+            <div style={{ flex: 1, fontWeight: 700, fontSize: '0.85rem', textAlign: 'right' }}>
+              {teamALabel || '—'}
+            </div>
+            <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <input
+                type="number" min="0"
+                value={scoreAInput}
+                onChange={(e) => setScoreAInput(e.target.value)}
+                style={{ width: 54, padding: '6px 4px', textAlign: 'center', fontSize: '0.9rem' }}
+                placeholder="0"
+              />
+              <span style={{ fontWeight: 800, color: 'var(--text-light)', fontSize: '0.9rem' }}>:</span>
+              <input
+                type="number" min="0"
+                value={scoreBInput}
+                onChange={(e) => setScoreBInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && bothValid && !drawBlocked && confirmTime()}
+                style={{ width: 54, padding: '6px 4px', textAlign: 'center', fontSize: '0.9rem' }}
+                placeholder="0"
+              />
+            </div>
+            <div style={{ flex: 1, fontWeight: 700, fontSize: '0.85rem' }}>
               {teamBLabel || '—'}
             </div>
           </>
         ) : isAdmin ? (
-          /* ── Winner selection ── */
+          /* ── Points-based: winner selection ── */
           <>
-            {TEAM_BTN('A', teamALabel, false)}
+            {TEAM_BTN('A', teamALabel)}
             <span style={{ color: 'var(--text-light)', fontWeight: 700, fontSize: '0.8rem', flexShrink: 0 }}>vs</span>
-            {TEAM_BTN('B', teamBLabel, false)}
+            {TEAM_BTN('B', teamBLabel)}
           </>
         ) : (
           /* ── Player view ── */
@@ -946,8 +1047,28 @@ function AmericanoMatchRow({ courtNum, m, teamALabel, teamBLabel, isAdmin, winSc
         )}
       </div>
 
-      {/* Loser score input – only shown after winner is clicked */}
-      {!played && isAdmin && winner && (
+      {/* Time-based: confirm / draw-blocked warning */}
+      {!played && isAdmin && timeBasedGame && bothValid && (
+        <div style={{
+          marginTop: 10, paddingTop: 10,
+          borderTop: '1px solid var(--border)',
+          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+        }}>
+          {drawBlocked ? (
+            <span style={{ fontSize: '0.78rem', color: 'var(--danger)', fontWeight: 600 }}>
+              Unentschieden nicht erlaubt – bitte Finalpunkt ausspielen.
+            </span>
+          ) : (
+            <button className="btn-primary btn-sm" onClick={confirmTime}>Bestätigen</button>
+          )}
+          <button className="btn-ghost btn-sm" onClick={() => { setScoreAInput(''); setScoreBInput(''); }}>
+            Zurücksetzen
+          </button>
+        </div>
+      )}
+
+      {/* Points-based: loser score input */}
+      {!played && isAdmin && !timeBasedGame && winner && (
         <div style={{
           marginTop: 10, paddingTop: 10,
           borderTop: '1px solid var(--border)',
@@ -961,15 +1082,11 @@ function AmericanoMatchRow({ courtNum, m, teamALabel, teamBLabel, isAdmin, winSc
             autoFocus
             value={loserScore}
             onChange={(e) => setLoserScore(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && loserValid && confirm()}
+            onKeyDown={(e) => e.key === 'Enter' && loserValid && confirmPoints()}
             style={{ width: 70, padding: '6px 8px', textAlign: 'center', fontSize: '0.9rem' }}
             placeholder={`0 – ${winScore - 1}`}
           />
-          <button
-            className="btn-primary btn-sm"
-            onClick={confirm}
-            disabled={!loserValid}
-          >
+          <button className="btn-primary btn-sm" onClick={confirmPoints} disabled={!loserValid}>
             Bestätigen
           </button>
           <button className="btn-ghost btn-sm" onClick={() => { setWinner(null); setLoserScore(''); }}>
