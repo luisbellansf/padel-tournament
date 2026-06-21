@@ -1,0 +1,5 @@
+{
+  "name": "padel-tournament",
+  "private": true,
+  "engines": { "node": "20.x" }
+}
