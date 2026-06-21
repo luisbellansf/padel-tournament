@@ -11,6 +11,7 @@ const playerRoutes = require('./routes/players');
 const tournamentRoutes = require('./routes/tournaments');
 
 const app = express();
+app.set('trust proxy', 1);
 
 const IS_PROD = process.env.NODE_ENV === 'production';
 const FRONTEND_DIST = path.join(__dirname, '../../frontend/dist');

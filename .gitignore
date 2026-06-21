@@ -21,3 +21,4 @@ Thumbs.db
 
 # Prisma Dev-DB
 /backend/prisma/migrations/dev.db*
+setup.sh
