@@ -389,9 +389,92 @@ router.post('/:id/matches/:matchId/score', requireAdmin, ah(async (req, res) => 
       const field = match.slot % 2 === 0 ? 'teamAId' : 'teamBId';
       await prisma.match.update({ where: { id: next.id }, data: { [field]: winnerTeamId } });
     }
+
+    // Americano-Finalrunde: Die Verlierer der Halbfinals spielen um Platz 3.
+    if (tournament?.format === 'AMERICANO' && match.round === 1) {
+      const loserTeamId = winnerTeamId === match.teamAId ? match.teamBId : match.teamAId;
+      const thirdPlace = await prisma.match.findFirst({
+        where: { tournamentId: match.tournamentId, stage: 'KNOCKOUT', round: 2, slot: 1 },
+      });
+      if (thirdPlace && loserTeamId) {
+        const field = match.slot === 0 ? 'teamAId' : 'teamBId';
+        await prisma.match.update({ where: { id: thirdPlace.id }, data: { [field]: loserTeamId } });
+      }
+    }
+  }
+
+  if (tournament?.format === 'AMERICANO' && match.stage === 'KNOCKOUT' && match.round === 2) {
+    const openPlayoffs = await prisma.match.count({
+      where: { tournamentId: match.tournamentId, stage: 'KNOCKOUT', round: 2, scoreA: null },
+    });
+    if (openPlayoffs === 0) {
+      await prisma.tournament.update({ where: { id: match.tournamentId }, data: { status: 'FINISHED' } });
+    }
   }
 
   res.json(updated);
+}));
+
+/* ---------------- Americano: Finalrunde --------------------- */
+
+router.post('/:id/americano-finals', requireAdmin, ah(async (req, res) => {
+  const tournamentId = Number(req.params.id);
+  const parsed = z.object({
+    playerIds: z.array(z.number().int().positive()).length(4)
+      .refine((ids) => new Set(ids).size === 4, 'Die Top 4 müssen eindeutig sein.'),
+  }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Ungültige Top-4-Auswahl.' });
+
+  const tournament = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+    include: { registrations: { include: { user: { select: { name: true } } } }, matches: true },
+  });
+  if (!tournament) return res.status(404).json({ error: 'Turnier nicht gefunden.' });
+  if (tournament.format !== 'AMERICANO') return res.status(400).json({ error: 'Finalrunde ist nur für Americano verfügbar.' });
+  if (tournament.matches.some((m) => m.stage === 'KNOCKOUT')) {
+    return res.status(409).json({ error: 'Die Finalrunde wurde bereits gestartet.' });
+  }
+
+  const preliminary = tournament.matches.filter((m) => m.stage === 'ROUND_ROBIN');
+  if (preliminary.length === 0 || preliminary.some((m) => m.scoreA == null)) {
+    return res.status(400).json({ error: 'Zuerst müssen alle Americano-Runden abgeschlossen sein.' });
+  }
+
+  const registrations = new Map(tournament.registrations.map((r) => [r.userId, r]));
+  if (parsed.data.playerIds.some((id) => !registrations.has(id))) {
+    return res.status(400).json({ error: 'Mindestens ein Finalist gehört nicht zu diesem Turnier.' });
+  }
+
+  const finalistTeams = [];
+  for (const playerId of parsed.data.playerIds) {
+    const team = await prisma.team.create({
+      data: {
+        tournamentId,
+        name: registrations.get(playerId).user.name,
+        manual: false,
+        totalSkill: 0,
+        playerIds: [playerId],
+      },
+    });
+    finalistTeams.push(team);
+  }
+
+  // Setzliste: 1 vs. 4 und 2 vs. 3; Finale und Platz 3 werden automatisch befüllt.
+  await prisma.match.createMany({
+    data: [
+      { tournamentId, stage: 'KNOCKOUT', round: 1, slot: 0, teamAId: finalistTeams[0].id, teamBId: finalistTeams[3].id },
+      { tournamentId, stage: 'KNOCKOUT', round: 1, slot: 1, teamAId: finalistTeams[1].id, teamBId: finalistTeams[2].id },
+      { tournamentId, stage: 'KNOCKOUT', round: 2, slot: 0 },
+      { tournamentId, stage: 'KNOCKOUT', round: 2, slot: 1 },
+    ],
+  });
+
+  await prisma.tournament.update({
+    where: { id: tournamentId },
+    data: { config: { ...(tournament.config ?? {}), americanoFinalsStarted: true } },
+  });
+
+  res.status(201).json({ ok: true });
 }));
 
 /* ---------------- Americano: standings visibility ----------- */
