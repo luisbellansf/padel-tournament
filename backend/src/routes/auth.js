@@ -6,6 +6,15 @@ const ah = require('../lib/asyncHandler');
 
 const router = express.Router();
 
+const IS_PROD = process.env.NODE_ENV === 'production';
+
+const COOKIE_OPTS = {
+  httpOnly: true,
+  secure: IS_PROD,
+  sameSite: 'strict',
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+};
+
 const registerSchema = z.object({
   name:       z.string().min(2, 'Benutzername muss mind. 2 Zeichen haben').max(50),
   email:      z.string().email().max(254).optional(),
@@ -35,7 +44,8 @@ router.post('/register', ah(async (req, res) => {
     data: { name, email: email ?? null, passwordHash, skillLevel },
   });
   const token = signToken(user);
-  res.status(201).json({ token, user: publicUser(user) });
+  res.cookie('auth_token', token, COOKIE_OPTS);
+  res.status(201).json({ user: publicUser(user) });
 }));
 
 const loginSchema = z.object({
@@ -54,8 +64,14 @@ router.post('/login', ah(async (req, res) => {
     return res.status(401).json({ error: 'Benutzername oder Passwort falsch.' });
   }
   const token = signToken(user);
-  res.json({ token, user: publicUser(user) });
+  res.cookie('auth_token', token, COOKIE_OPTS);
+  res.json({ user: publicUser(user) });
 }));
+
+router.post('/logout', (_req, res) => {
+  res.clearCookie('auth_token', { httpOnly: true, secure: IS_PROD, sameSite: 'strict' });
+  res.json({ ok: true });
+});
 
 function publicUser(u) {
   return { id: u.id, name: u.name, email: u.email, role: u.role, skillLevel: u.skillLevel };

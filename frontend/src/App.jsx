@@ -1,6 +1,6 @@
 import { useState, useEffect, createContext, useContext } from 'react';
 import { Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { api, setToken, getToken } from './api';
+import { api } from './api';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import Dashboard from './pages/Dashboard.jsx';
@@ -17,12 +17,11 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!getToken()) return setLoading(false);
-    api.me().then(setUser).catch(() => setToken(null)).finally(() => setLoading(false));
+    api.me().then(setUser).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
-  const login  = (token, u) => { setToken(token); setUser(u); };
-  const logout = () => { setToken(null); setUser(null); };
+  const login  = (u) => setUser(u);
+  const logout = async () => { await api.logout().catch(() => {}); setUser(null); };
 
   if (loading) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#64748b', fontSize: '0.9rem' }}>

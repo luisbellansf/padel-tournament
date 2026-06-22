@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 
@@ -19,6 +20,7 @@ const FRONTEND_DIST = path.join(__dirname, '../../frontend/dist');
 // Sicherheits-Header
 app.use(helmet());
 app.use(express.json({ limit: '100kb' }));
+app.use(cookieParser());
 
 // In production the frontend is served from the same origin → no CORS needed.
 // In development we allow the Vite dev server origin via env var.
@@ -26,6 +28,7 @@ if (!IS_PROD) {
   app.use(
     cors({
       origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : [],
+      credentials: true,
     })
   );
 }
