@@ -651,7 +651,7 @@ function computeAmericanoStandings(t) {
     });
   });
 
-  t.matches.forEach((m) => {
+  t.matches.filter((m) => m.stage === 'ROUND_ROBIN').forEach((m) => {
     if (m.scoreA == null) return;
     const tA = t.teams.find((x) => x.id === m.teamAId);
     const tB = t.teams.find((x) => x.id === m.teamBId);
@@ -704,6 +704,9 @@ function computeAmericanoStandings(t) {
 
 /* ─── Container ───────────────────────────────────────── */
 function AmericanoView({ t, isAdmin, onSave, tournamentId, onReload }) {
+  const [showResults, setShowResults] = useState(false);
+  const [startingFinals, setStartingFinals] = useState(false);
+  const [finalsError, setFinalsError] = useState('');
   const standings     = computeAmericanoStandings(t);
   const aroundsMeta   = t.config?.americanoRounds ?? [];
   const winScore      = t.config?.winScore ?? 11;
@@ -713,8 +716,26 @@ function AmericanoView({ t, isAdmin, onSave, tournamentId, onReload }) {
   const onlyWinner    = t.config?.onlyWinner ?? false;
   const pointsForWinPB = t.config?.pointsForWinPB;
 
+  const preliminaryMatches = t.matches.filter((m) => m.stage === 'ROUND_ROBIN');
+  const playoffMatches = t.matches.filter((m) => m.stage === 'KNOCKOUT');
+  const preliminaryDone = preliminaryMatches.length > 0 && preliminaryMatches.every((m) => m.scoreA != null);
+  const finalsStarted = playoffMatches.length > 0;
+
   const matchesByRound = {};
-  t.matches.forEach((m) => { (matchesByRound[m.round] ||= []).push(m); });
+  preliminaryMatches.forEach((m) => { (matchesByRound[m.round] ||= []).push(m); });
+
+  const startFinals = async () => {
+    setFinalsError('');
+    setStartingFinals(true);
+    try {
+      await api.startAmericanoFinals(tournamentId, standings.slice(0, 4).map((s) => s.userId));
+      onReload();
+    } catch (e) {
+      setFinalsError(e.message);
+    } finally {
+      setStartingFinals(false);
+    }
+  };
 
   const toggleHide = async () => {
     try { await api.toggleStandings(tournamentId, !hidden); onReload(); }
@@ -774,7 +795,170 @@ function AmericanoView({ t, isAdmin, onSave, tournamentId, onReload }) {
           onlyWinner={onlyWinner}
         />
       ))}
+
+      {finalsStarted && (
+        <AmericanoFinals
+          matches={playoffMatches}
+          teams={t.teams}
+          isAdmin={isAdmin}
+          onSave={onSave}
+          winScore={winScore}
+          timeBasedGame={timeBasedGame}
+          allowDraw={allowDraw}
+          onlyWinner={onlyWinner}
+        />
+      )}
+
+      {preliminaryDone && (
+        <div className="americano-finish-actions">
+          <div>
+            <span className="tag">Americano abgeschlossen</span>
+            <h2 style={{ margin: 0 }}>Zeit für die Entscheidung</h2>
+          </div>
+          <div className="americano-finish-buttons">
+            <button className="btn-primary" onClick={() => setShowResults(true)}>🏆 Ergebnis anzeigen</button>
+            {isAdmin && !finalsStarted && (
+              <button className="btn-ghost" onClick={startFinals} disabled={startingFinals || standings.length < 4}>
+                {startingFinals ? 'Wird erstellt…' : '🎾 Finalrunde starten'}
+              </button>
+            )}
+          </div>
+          {finalsError && <div className="error" style={{ width: '100%' }}>{finalsError}</div>}
+        </div>
+      )}
+
+      {showResults && (
+        <ResultsCelebration
+          tournamentName={t.name}
+          standings={standings}
+          playoffMatches={playoffMatches}
+          teams={t.teams}
+          onClose={() => setShowResults(false)}
+        />
+      )}
     </>
+  );
+}
+
+/* ─── Americano playoffs ─────────────────────────────── */
+function AmericanoFinals({ matches, teams, isAdmin, onSave, winScore, timeBasedGame, allowDraw, onlyWinner }) {
+  const teamName = (id) => teams.find((team) => team.id === id)?.name ?? '';
+  const semifinals = matches.filter((m) => m.round === 1).sort((a, b) => a.slot - b.slot);
+  const final = matches.find((m) => m.round === 2 && m.slot === 0);
+  const third = matches.find((m) => m.round === 2 && m.slot === 1);
+
+  const playoffMatch = (m, label) => m && (
+    <div key={m.id} className="americano-playoff-match">
+      <div className="americano-playoff-label">{label}</div>
+      {!m.teamAId || !m.teamBId ? (
+        <div className="americano-playoff-pending">Wartet auf die Halbfinal-Ergebnisse…</div>
+      ) : (
+        <AmericanoMatchRow
+          courtNum=""
+          courtLabel={label}
+          m={m}
+          teamALabel={teamName(m.teamAId)}
+          teamBLabel={teamName(m.teamBId)}
+          isAdmin={isAdmin}
+          winScore={winScore}
+          onSave={onSave}
+          timeBasedGame={timeBasedGame}
+          allowDraw={allowDraw}
+          onlyWinner={onlyWinner}
+        />
+      )}
+    </div>
+  );
+
+  return (
+    <section className="americano-finals-card">
+      <div className="americano-finals-heading">
+        <div className="americano-finals-icon">🏆</div>
+        <div>
+          <span className="tag">Top 4</span>
+          <h2 style={{ margin: 0 }}>Finalrunde</h2>
+          <p className="muted" style={{ marginTop: 4, fontSize: '0.84rem' }}>1. gegen 4. und 2. gegen 3.</p>
+        </div>
+      </div>
+      <div className="americano-playoff-grid">
+        <div>
+          <h3>Halbfinale</h3>
+          {semifinals.map((m, i) => playoffMatch(m, `Halbfinale ${i + 1}`))}
+        </div>
+        <div>
+          <h3>Platzierungsspiele</h3>
+          {playoffMatch(final, 'Finale')}
+          {playoffMatch(third, 'Spiel um Platz 3')}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ResultsCelebration({ tournamentName, standings, playoffMatches, teams, onClose }) {
+  useEffect(() => {
+    const closeOnEscape = (e) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+
+  const teamPlayer = (teamId) => {
+    const playerId = teams.find((team) => team.id === teamId)?.playerIds?.[0];
+    return standings.find((entry) => entry.userId === playerId);
+  };
+  const winnerAndLoser = (match) => {
+    if (!match || match.scoreA == null || match.scoreA === match.scoreB) return null;
+    return match.scoreA > match.scoreB
+      ? [teamPlayer(match.teamAId), teamPlayer(match.teamBId)]
+      : [teamPlayer(match.teamBId), teamPlayer(match.teamAId)];
+  };
+
+  const finalResult = winnerAndLoser(playoffMatches.find((m) => m.round === 2 && m.slot === 0));
+  const thirdResult = winnerAndLoser(playoffMatches.find((m) => m.round === 2 && m.slot === 1));
+  const podium = finalResult && thirdResult
+    ? [finalResult[0], finalResult[1], thirdResult[0]]
+    : standings.slice(0, 3);
+  const podiumByVisualOrder = [
+    { place: 2, entry: podium[1], medal: '🥈' },
+    { place: 1, entry: podium[0], medal: '🥇' },
+    { place: 3, entry: podium[2], medal: '🥉' },
+  ];
+
+  return (
+    <div className="results-celebration" role="dialog" aria-modal="true" aria-label="Turnierergebnis">
+      <div className="celebration-glow" />
+      <div className="confetti" aria-hidden="true">
+        {Array.from({ length: 36 }, (_, i) => (
+          <i key={i} style={{
+            '--i': i,
+            '--x': `${(i * 29) % 100}%`,
+            '--delay': `${(i % 9) * 0.12}s`,
+            '--duration': `${3 + (i % 5) * 0.35}s`,
+            '--drift': `${((i % 7) - 3) * 12}px`,
+          }} />
+        ))}
+      </div>
+      <button className="celebration-close" onClick={onClose} aria-label="Ergebnis schließen">✕</button>
+      <div className="celebration-brand">
+        <img src="/fivy.svg" alt="Salesfive" />
+        <div><strong>Salesfive</strong><span>Tournaments</span></div>
+      </div>
+      <div className="celebration-title">
+        <span>Americano Champions</span>
+        <h1>{tournamentName}</h1>
+      </div>
+      <div className="celebration-podium">
+        {podiumByVisualOrder.map(({ place, entry, medal }) => (
+          <div key={place} className={`podium-place podium-place-${place}`}>
+            <div className="podium-medal">{medal}</div>
+            <div className="podium-name">{entry?.name ?? '—'}</div>
+            <div className="podium-score">{entry?.totalPoints ?? 0} Punkte</div>
+            <div className="podium-block"><strong>{place}</strong><span>PLATZ</span></div>
+          </div>
+        ))}
+      </div>
+      <button className="celebration-done" onClick={onClose}>Zurück zum Turnier</button>
+    </div>
   );
 }
 
@@ -933,7 +1117,7 @@ function AmericanoRoundCard({ roundNum, matches, sittingOut, teams, registration
 }
 
 /* ─── Single match row (winner-selection UI) ─────────── */
-function AmericanoMatchRow({ courtNum, m, teamALabel, teamBLabel, isAdmin, winScore = 11, onSave, timeBasedGame = false, allowDraw = true, onlyWinner = false }) {
+function AmericanoMatchRow({ courtNum, courtLabel = 'Court', m, teamALabel, teamBLabel, isAdmin, winScore = 11, onSave, timeBasedGame = false, allowDraw = true, onlyWinner = false }) {
   // Points-based state
   const [winner, setWinner]         = useState(null);
   const [loserScore, setLoserScore] = useState('');
@@ -1007,7 +1191,7 @@ function AmericanoMatchRow({ courtNum, m, teamALabel, teamBLabel, isAdmin, winSc
           fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-light)',
           textTransform: 'uppercase', letterSpacing: '0.06em', width: 46, flexShrink: 0, textAlign: 'center',
         }}>
-          Court<br />{courtNum}
+          {courtLabel}{courtNum !== '' && <><br />{courtNum}</>}
         </span>
 
         {played ? (
