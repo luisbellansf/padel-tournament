@@ -347,12 +347,15 @@ router.post('/:id/matches/:matchId/score', requireAdmin, ah(async (req, res) => 
 
   if (tournament?.format === 'AMERICANO') {
     const timeBasedGame = tournament.config?.timeBasedGame ?? false;
+    const onlyWinner    = tournament.config?.onlyWinner ?? false;
     if (timeBasedGame) {
-      const allowDraw = tournament.config?.allowDraw ?? true;
-      if (!allowDraw && scoreA === scoreB) {
-        return res.status(400).json({ error: 'Unentschieden nicht erlaubt – bitte Finalpunkt ausspielen.' });
+      if (!onlyWinner) {
+        const allowDraw = tournament.config?.allowDraw ?? true;
+        if (!allowDraw && scoreA === scoreB) {
+          return res.status(400).json({ error: 'Unentschieden nicht erlaubt – bitte Finalpunkt ausspielen.' });
+        }
       }
-    } else {
+    } else if (!onlyWinner) {
       const winScore = tournament.config?.winScore ?? 11;
       const maxScore = Math.max(scoreA, scoreB);
       const minScore = Math.min(scoreA, scoreB);
