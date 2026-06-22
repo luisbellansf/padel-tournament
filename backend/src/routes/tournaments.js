@@ -40,6 +40,8 @@ const createSchema = z.object({
       pointsForWin:     z.number().int().min(0).max(99).optional(),
       pointsForDraw:    z.number().int().min(0).max(99).optional(),
       allowDraw:        z.boolean().optional(),
+      onlyWinner:       z.boolean().optional(),
+      pointsForWinPB:   z.number().int().min(0).max(99).optional(),
     })
     .optional(),
 });
