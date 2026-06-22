@@ -274,7 +274,7 @@ export default function Dashboard() {
                     Nur Sieger erfassen
                   </div>
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 1 }}>
-                    Im Turnierbaum wird nur der Gewinner eingetragen – kein genaues Punkteergebnis erforderlich
+                    Pro Spiel wird der Gewinner per Button eingetragen – kein genaues Punkteergebnis erforderlich
                   </div>
                 </div>
               </label>

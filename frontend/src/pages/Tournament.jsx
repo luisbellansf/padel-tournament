@@ -986,6 +986,7 @@ function AmericanoMatchRow({ courtNum, m, teamALabel, teamBLabel, isAdmin, winSc
           textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}
       >
+        {onlyWinner && <span aria-hidden="true" style={{ marginRight: 6 }}>🏆</span>}
         {label || '—'}
         {selected && <span style={{ marginLeft: 6, opacity: 0.8 }}>✓</span>}
       </button>
