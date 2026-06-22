@@ -20,8 +20,8 @@ export default function Register() {
     setError('');
     setLoading(true);
     try {
-      const { token, user } = await api.register(form);
-      login(token, user);
+      const { user } = await api.register(form);
+      login(user);
       nav('/');
     } catch (e) {
       setError(e.message);

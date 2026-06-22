@@ -1,21 +1,9 @@
-// Schlanker API-Client mit Token aus localStorage
-const TOKEN_KEY = 'padel_token';
-
-export function getToken() {
-  return localStorage.getItem(TOKEN_KEY);
-}
-export function setToken(t) {
-  if (t) localStorage.setItem(TOKEN_KEY, t);
-  else localStorage.removeItem(TOKEN_KEY);
-}
-
 async function request(path, { method = 'GET', body } = {}) {
   const headers = { 'Content-Type': 'application/json' };
-  const token = getToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(`/api${path}`, {
     method,
     headers,
+    credentials: 'include',
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
@@ -25,7 +13,8 @@ async function request(path, { method = 'GET', body } = {}) {
 
 export const api = {
   register: (b) => request('/auth/register', { method: 'POST', body: b }),
-  login: (b) => request('/auth/login', { method: 'POST', body: b }),
+  login:    (b) => request('/auth/login',    { method: 'POST', body: b }),
+  logout:   ()  => request('/auth/logout',   { method: 'POST' }),
   me: () => request('/players/me'),
   updateMe: (b) => request('/players/me', { method: 'PATCH', body: b }),
   updateProfile: (b) => request('/players/me', { method: 'PATCH', body: b }),

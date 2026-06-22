@@ -14,8 +14,8 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      const { token, user } = await api.login(form);
-      login(token, user);
+      const { user } = await api.login(form);
+      login(user);
       nav('/');
     } catch (e) {
       setError(e.message);

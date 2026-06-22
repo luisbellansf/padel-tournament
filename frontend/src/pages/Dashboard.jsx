@@ -38,6 +38,7 @@ export default function Dashboard() {
     // Americano
     winScore: 21, numCourts: 2, fullRotation: false, numRounds: 7, hideStandings: false,
     timeBasedGame: false, pointsForWin: 2, pointsForDraw: 1, allowDraw: true,
+    onlyWinner: false, pointsForWinPB: '',
     // Group + KO
     numGroups: 2, advancePerGroup: 2,
   });
@@ -61,8 +62,10 @@ export default function Dashboard() {
         config.numCourts     = Number(form.numCourts);
         config.fullRotation  = form.fullRotation;
         config.hideStandings = form.hideStandings;
+        config.onlyWinner    = form.onlyWinner;
         if (!form.timeBasedGame) {
           config.winScore = Number(form.winScore);
+          if (form.pointsForWinPB !== '') config.pointsForWinPB = Number(form.pointsForWinPB);
         } else {
           config.pointsForWin  = Number(form.pointsForWin);
           config.pointsForDraw = form.allowDraw ? Number(form.pointsForDraw) : 0;
@@ -156,11 +159,22 @@ export default function Dashboard() {
                   </p>
                 </div>
                 {!form.timeBasedGame && (
-                  <div>
-                    <label>Siegpunkte</label>
-                    <input type="number" min="5" max="200" value={form.winScore}
-                      onChange={(e) => setForm({ ...form, winScore: e.target.value })} />
-                  </div>
+                  <>
+                    <div>
+                      <label>Siegpunkte</label>
+                      <input type="number" min="5" max="200" value={form.winScore}
+                        onChange={(e) => setForm({ ...form, winScore: e.target.value })} />
+                    </div>
+                    <div>
+                      <label>Turnierpunkte für Sieg <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(optional)</span></label>
+                      <input type="number" min="0" max="99" value={form.pointsForWinPB}
+                        placeholder="–"
+                        onChange={(e) => setForm({ ...form, pointsForWinPB: e.target.value })} />
+                      <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '4px 0 0' }}>
+                        Wenn gesetzt, bekommt das Siegerteam diese Punkte statt der Spielpunkte.
+                      </p>
+                    </div>
+                  </>
                 )}
                 {form.timeBasedGame && (
                   <div>
@@ -241,6 +255,29 @@ export default function Dashboard() {
                   )}
                 </>
               )}
+              {/* Only winner checkbox */}
+              <label style={{
+                display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
+                padding: '10px 14px', borderRadius: 10,
+                background: form.onlyWinner ? '#eef2ff' : 'var(--bg)',
+                border: `1px solid ${form.onlyWinner ? '#c7d2fe' : 'var(--border)'}`,
+                userSelect: 'none',
+              }}>
+                <input
+                  type="checkbox"
+                  checked={form.onlyWinner}
+                  onChange={(e) => setForm({ ...form, onlyWinner: e.target.checked })}
+                  style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#0025D1' }}
+                />
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.88rem', color: form.onlyWinner ? '#0025D1' : 'var(--text)' }}>
+                    Nur Sieger erfassen
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 1 }}>
+                    Im Turnierbaum wird nur der Gewinner eingetragen – kein genaues Punkteergebnis erforderlich
+                  </div>
+                </div>
+              </label>
               {/* Full rotation toggle */}
               <label style={{
                 display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
