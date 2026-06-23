@@ -26,7 +26,8 @@ export const api = {
   registerForTournament: (id, b) => request(`/tournaments/${id}/register`, { method: 'POST', body: b }),
   formTeams: (id) => request(`/tournaments/${id}/form-teams`, { method: 'POST' }),
   generate: (id) => request(`/tournaments/${id}/generate`, { method: 'POST' }),
-  score: (id, matchId, b) => request(`/tournaments/${id}/matches/${matchId}/score`, { method: 'POST', body: b }),
+  score:     (id, matchId, b) => request(`/tournaments/${id}/matches/${matchId}/score`, { method: 'POST', body: b }),
+  undoScore: (id, matchId)    => request(`/tournaments/${id}/matches/${matchId}/score`, { method: 'DELETE' }),
   startAmericanoFinals: (id, playerIds) => request(`/tournaments/${id}/americano-finals`, { method: 'POST', body: { playerIds } }),
   // Admin: Turnier-Anmeldungen verwalten
   toggleStandings:   (tId, hide)    => request(`/tournaments/${tId}/hide-standings`, { method: 'PATCH', body: { hide } }),

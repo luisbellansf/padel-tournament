@@ -233,6 +233,11 @@ export default function Tournament() {
     catch (e) { setError(e.message); }
   };
 
+  const undoScore = async (matchId) => {
+    try { await api.undoScore(id, matchId); load(); }
+    catch (e) { setError(e.message); }
+  };
+
   const adminAddPlayer = async (userId) => {
     try { await api.adminRegisterUser(id, userId); load(); }
     catch (e) { setError(e.message); }
@@ -463,7 +468,7 @@ export default function Tournament() {
 
       {/* ── Americano view ────────────────────────────── */}
       {t.format === 'AMERICANO' && (
-        <AmericanoView t={t} isAdmin={isAdmin} onSave={saveScore} tournamentId={id} onReload={load} />
+        <AmericanoView t={t} isAdmin={isAdmin} onSave={saveScore} onUndo={undoScore} tournamentId={id} onReload={load} />
       )}
 
       {/* ── Teams (classic formats only) ─────────────── */}
@@ -492,14 +497,14 @@ export default function Tournament() {
                 <div key={key} className="round-col">
                   <div className="round-title">Runde {ms[0].round}</div>
                   {ms.map((m) => (
-                    <MatchRow key={m.id} m={m} teamName={teamName} isAdmin={isAdmin} onSave={saveScore} />
+                    <MatchRow key={m.id} m={m} teamName={teamName} isAdmin={isAdmin} onSave={saveScore} onUndo={undoScore} />
                   ))}
                 </div>
               ))}
             </div>
           ) : (
             t.matches.map((m) => (
-              <MatchRow key={m.id} m={m} teamName={teamName} isAdmin={isAdmin} onSave={saveScore} showGroup />
+              <MatchRow key={m.id} m={m} teamName={teamName} isAdmin={isAdmin} onSave={saveScore} onUndo={undoScore} showGroup />
             ))
           )}
         </>
@@ -703,7 +708,7 @@ function computeAmericanoStandings(t) {
 }
 
 /* ─── Container ───────────────────────────────────────── */
-function AmericanoView({ t, isAdmin, onSave, tournamentId, onReload }) {
+function AmericanoView({ t, isAdmin, onSave, onUndo, tournamentId, onReload }) {
   const [showResults, setShowResults] = useState(false);
   const [startingFinals, setStartingFinals] = useState(false);
   const [finalsError, setFinalsError] = useState('');
@@ -790,6 +795,7 @@ function AmericanoView({ t, isAdmin, onSave, tournamentId, onReload }) {
           isAdmin={isAdmin}
           winScore={winScore}
           onSave={onSave}
+          onUndo={onUndo}
           timeBasedGame={timeBasedGame}
           allowDraw={allowDraw}
           onlyWinner={onlyWinner}
@@ -802,6 +808,7 @@ function AmericanoView({ t, isAdmin, onSave, tournamentId, onReload }) {
           teams={t.teams}
           isAdmin={isAdmin}
           onSave={onSave}
+          onUndo={onUndo}
           winScore={winScore}
           timeBasedGame={timeBasedGame}
           allowDraw={allowDraw}
@@ -841,7 +848,7 @@ function AmericanoView({ t, isAdmin, onSave, tournamentId, onReload }) {
 }
 
 /* ─── Americano playoffs ─────────────────────────────── */
-function AmericanoFinals({ matches, teams, isAdmin, onSave, winScore, timeBasedGame, allowDraw, onlyWinner }) {
+function AmericanoFinals({ matches, teams, isAdmin, onSave, onUndo, winScore, timeBasedGame, allowDraw, onlyWinner }) {
   const teamName = (id) => teams.find((team) => team.id === id)?.name ?? '';
   const semifinals = matches.filter((m) => m.round === 1).sort((a, b) => a.slot - b.slot);
   const final = matches.find((m) => m.round === 2 && m.slot === 0);
@@ -862,6 +869,7 @@ function AmericanoFinals({ matches, teams, isAdmin, onSave, winScore, timeBasedG
           isAdmin={isAdmin}
           winScore={winScore}
           onSave={onSave}
+          onUndo={onUndo}
           timeBasedGame={timeBasedGame}
           allowDraw={allowDraw}
           onlyWinner={onlyWinner}
@@ -1053,7 +1061,7 @@ function AmericanoStandings({ standings, dimmed = false, timeBasedGame = false, 
 }
 
 /* ─── Single round card ───────────────────────────────── */
-function AmericanoRoundCard({ roundNum, matches, sittingOut, teams, registrations, isAdmin, winScore, onSave, timeBasedGame = false, allowDraw = true, onlyWinner = false }) {
+function AmericanoRoundCard({ roundNum, matches, sittingOut, teams, registrations, isAdmin, winScore, onSave, onUndo, timeBasedGame = false, allowDraw = true, onlyWinner = false }) {
   const pName = (uid) => registrations.find((r) => r.userId === uid)?.user?.name ?? `#${uid}`;
   const teamLabel = (teamId) => {
     const team = teams.find((t) => t.id === teamId);
@@ -1094,6 +1102,7 @@ function AmericanoRoundCard({ roundNum, matches, sittingOut, teams, registration
           isAdmin={isAdmin}
           winScore={winScore}
           onSave={onSave}
+          onUndo={onUndo}
           timeBasedGame={timeBasedGame}
           allowDraw={allowDraw}
           onlyWinner={onlyWinner}
@@ -1117,7 +1126,7 @@ function AmericanoRoundCard({ roundNum, matches, sittingOut, teams, registration
 }
 
 /* ─── Single match row (winner-selection UI) ─────────── */
-function AmericanoMatchRow({ courtNum, courtLabel = 'Court', m, teamALabel, teamBLabel, isAdmin, winScore = 11, onSave, timeBasedGame = false, allowDraw = true, onlyWinner = false }) {
+function AmericanoMatchRow({ courtNum, courtLabel = 'Court', m, teamALabel, teamBLabel, isAdmin, winScore = 11, onSave, onUndo, timeBasedGame = false, allowDraw = true, onlyWinner = false }) {
   // Points-based state
   const [winner, setWinner]         = useState(null);
   const [loserScore, setLoserScore] = useState('');
@@ -1281,6 +1290,20 @@ function AmericanoMatchRow({ courtNum, courtLabel = 'Court', m, teamALabel, team
         )}
       </div>
 
+      {/* Undo result */}
+      {played && isAdmin && onUndo && (
+        <div style={{ marginTop: 6, textAlign: 'right' }}>
+          <button
+            className="btn-ghost btn-sm"
+            onClick={() => onUndo(m.id)}
+            style={{ fontSize: '0.72rem', opacity: 0.65, padding: '2px 8px' }}
+            title="Ergebnis rückgängig machen"
+          >
+            ↩ Rückgängig
+          </button>
+        </div>
+      )}
+
       {/* Time-based: confirm / draw-blocked warning */}
       {!played && isAdmin && timeBasedGame && bothValid && (
         <div style={{
@@ -1338,7 +1361,7 @@ function AmericanoMatchRow({ courtNum, courtLabel = 'Court', m, teamALabel, team
 }
 
 /* ─── Match row (classic formats) ────────────────────── */
-function MatchRow({ m, teamName, isAdmin, onSave, showGroup }) {
+function MatchRow({ m, teamName, isAdmin, onSave, onUndo, showGroup }) {
   const [a, setA] = useState(m.scoreA ?? '');
   const [b, setB] = useState(m.scoreB ?? '');
   const played = m.scoreA != null;
@@ -1357,7 +1380,17 @@ function MatchRow({ m, teamName, isAdmin, onSave, showGroup }) {
       </div>
       <div className="center">
         {played ? (
-          <span className="score">{m.scoreA} : {m.scoreB}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span className="score">{m.scoreA} : {m.scoreB}</span>
+            {isAdmin && onUndo && (
+              <button
+                className="btn-ghost btn-sm"
+                onClick={() => onUndo(m.id)}
+                style={{ fontSize: '0.72rem', opacity: 0.65, padding: '2px 6px' }}
+                title="Ergebnis rückgängig machen"
+              >↩</button>
+            )}
+          </div>
         ) : isAdmin && m.teamAId && m.teamBId ? (
           <div className="row" style={{ flexWrap: 'nowrap', gap: 6 }}>
             <input style={{ width: 50, padding: '6px 8px', textAlign: 'center' }} value={a} onChange={(e) => setA(e.target.value)} />

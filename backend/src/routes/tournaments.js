@@ -415,6 +415,79 @@ router.post('/:id/matches/:matchId/score', requireAdmin, ah(async (req, res) => 
   res.json(updated);
 }));
 
+/* ---------------- Ergebnis rückgängig machen ---------------- */
+
+router.delete('/:id/matches/:matchId/score', requireAdmin, ah(async (req, res) => {
+  const matchId = Number(req.params.matchId);
+
+  const match = await prisma.match.findUnique({ where: { id: matchId } });
+  if (!match) return res.status(404).json({ error: 'Match nicht gefunden' });
+  if (match.scoreA == null) return res.status(400).json({ error: 'Kein Ergebnis vorhanden' });
+
+  const tournament = await prisma.tournament.findUnique({
+    where: { id: match.tournamentId },
+    select: { format: true, status: true },
+  });
+
+  if (match.stage === 'KNOCKOUT') {
+    const nextRound = match.round + 1;
+    const nextSlot  = Math.floor(match.slot / 2);
+    const next = await prisma.match.findFirst({
+      where: { tournamentId: match.tournamentId, stage: 'KNOCKOUT', round: nextRound, slot: nextSlot },
+    });
+    if (next && next.scoreA != null) {
+      return res.status(409).json({ error: 'Folgespiel bereits gespielt – bitte zuerst das Folgespiel rückgängig machen.' });
+    }
+
+    if (tournament?.format === 'AMERICANO' && match.round === 1) {
+      const thirdPlace = await prisma.match.findFirst({
+        where: { tournamentId: match.tournamentId, stage: 'KNOCKOUT', round: 2, slot: 1 },
+      });
+      if (thirdPlace && thirdPlace.scoreA != null) {
+        return res.status(409).json({ error: 'Spiel um Platz 3 bereits gespielt – bitte zuerst das rückgängig machen.' });
+      }
+    }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.match.update({
+      where: { id: matchId },
+      data: { scoreA: null, scoreB: null, winnerTeamId: null, playedAt: null },
+    });
+
+    if (match.stage === 'KNOCKOUT' && match.winnerTeamId) {
+      const nextRound = match.round + 1;
+      const nextSlot  = Math.floor(match.slot / 2);
+      const next = await tx.match.findFirst({
+        where: { tournamentId: match.tournamentId, stage: 'KNOCKOUT', round: nextRound, slot: nextSlot },
+      });
+      if (next) {
+        const field = match.slot % 2 === 0 ? 'teamAId' : 'teamBId';
+        await tx.match.update({ where: { id: next.id }, data: { [field]: null } });
+      }
+
+      if (tournament?.format === 'AMERICANO' && match.round === 1) {
+        const thirdPlace = await tx.match.findFirst({
+          where: { tournamentId: match.tournamentId, stage: 'KNOCKOUT', round: 2, slot: 1 },
+        });
+        if (thirdPlace) {
+          const field = match.slot === 0 ? 'teamAId' : 'teamBId';
+          await tx.match.update({ where: { id: thirdPlace.id }, data: { [field]: null } });
+        }
+      }
+    }
+
+    if (tournament?.status === 'FINISHED') {
+      await tx.tournament.update({
+        where: { id: match.tournamentId },
+        data: { status: 'RUNNING' },
+      });
+    }
+  });
+
+  res.json({ ok: true });
+}));
+
 /* ---------------- Americano: Finalrunde --------------------- */
 
 router.post('/:id/americano-finals', requireAdmin, ah(async (req, res) => {
