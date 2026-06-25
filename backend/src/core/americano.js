@@ -102,4 +102,138 @@ function bergerRound(k, roundIndex) {
   return pairs; // k/2 pairs
 }
 
-module.exports = { generateAmericano };
+// ─────────────────────────────────────────────────────────────────────────────
+// Faire Auslosung (skill-balanced + variety-optimised)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SKILL_WEIGHT = { ASSOCIATE: 1, CONSULTANT: 2, EXPERT: 3 };
+
+/**
+ * Generate Americano rounds with balanced skill levels and maximised variety.
+ *
+ * For each round a Monte-Carlo search finds the match arrangement that
+ * minimises a weighted cost:
+ *   W_SKILL   × |skillTeamA − skillTeamB|   (balance every match)
+ *   W_PARTNER × times these two have partnered before (avoid repeat partners)
+ *   W_OPP     × times these two have opposed each other (variety of opponents)
+ *
+ * @param {number[]} playerIds  – Array of player IDs (min 4)
+ * @param {{ [playerId]: string }} skillMap – Skill enum per player ID
+ * @param {number}   numRounds
+ * @param {number|null} numCourts
+ */
+function generateAmericanoFair(playerIds, skillMap, numRounds, numCourts) {
+  const n = playerIds.length;
+  if (n < 4) throw new Error('Americano benötigt mindestens 4 Spieler.');
+
+  const maxByPlayers = Math.floor(n / 4) * 4;
+  const maxByCourts  = numCourts ? numCourts * 4 : maxByPlayers;
+  const activeCount  = Math.min(maxByPlayers, maxByCourts);
+  const byesPerRound = n - activeCount;
+
+  const byeCounts    = new Array(n).fill(0);
+  const partnerCount = Array.from({ length: n }, () => new Array(n).fill(0));
+  const oppCount     = Array.from({ length: n }, () => new Array(n).fill(0));
+
+  // Skill weight per position in playerIds array
+  const skills = playerIds.map(id => SKILL_WEIGHT[skillMap[id]] || 1);
+
+  const rounds = [];
+
+  for (let r = 0; r < numRounds; r++) {
+    // 1. Sitting-out selection (same fair-bye rotation as standard Americano)
+    const order = Array.from({ length: n }, (_, i) => i)
+      .sort((a, b) => byeCounts[a] - byeCounts[b] || a - b);
+    const sittingIdxs = order.slice(0, byesPerRound);
+    sittingIdxs.forEach(i => byeCounts[i]++);
+    const activeIdxs = order.slice(byesPerRound);
+
+    // 2. Monte-Carlo: find best match arrangement
+    const arrangement = findBestArrangement(activeCount, activeIdxs, skills, partnerCount, oppCount);
+
+    // 3. Build matches and update history
+    const matches = [];
+    for (let m = 0; m < activeCount / 4; m++) {
+      const base = m * 4;
+      const p = [
+        activeIdxs[arrangement[base]],
+        activeIdxs[arrangement[base + 1]],
+        activeIdxs[arrangement[base + 2]],
+        activeIdxs[arrangement[base + 3]],
+      ];
+
+      partnerCount[p[0]][p[1]]++;  partnerCount[p[1]][p[0]]++;
+      partnerCount[p[2]][p[3]]++;  partnerCount[p[3]][p[2]]++;
+
+      for (const a of [p[0], p[1]]) for (const b of [p[2], p[3]]) {
+        oppCount[a][b]++;
+        oppCount[b][a]++;
+      }
+
+      matches.push({
+        teamA: [playerIds[p[0]], playerIds[p[1]]],
+        teamB: [playerIds[p[2]], playerIds[p[3]]],
+      });
+    }
+
+    rounds.push({
+      round:      r + 1,
+      sittingOut: sittingIdxs.map(i => playerIds[i]),
+      matches,
+    });
+  }
+
+  return rounds;
+}
+
+/** Find arrangement of [0..activeCount-1] that minimises match cost. */
+function findBestArrangement(activeCount, activeIdxs, skills, partnerCount, oppCount) {
+  const N_ATTEMPTS = 800;
+  const perm = Array.from({ length: activeCount }, (_, i) => i);
+
+  let bestPerm  = perm.slice();
+  let bestScore = scoreArrangement(perm, activeIdxs, skills, partnerCount, oppCount);
+
+  for (let t = 0; t < N_ATTEMPTS; t++) {
+    shuffleFY(perm);
+    const s = scoreArrangement(perm, activeIdxs, skills, partnerCount, oppCount);
+    if (s < bestScore) {
+      bestScore = s;
+      bestPerm  = perm.slice();
+    }
+  }
+
+  return bestPerm;
+}
+
+function scoreArrangement(perm, activeIdxs, skills, partnerCount, oppCount) {
+  const W_SKILL   = 3;
+  const W_PARTNER = 4;
+  const W_OPP     = 1;
+  let score = 0;
+
+  for (let m = 0; m < perm.length / 4; m++) {
+    const base = m * 4;
+    const [p0, p1, p2, p3] = [
+      activeIdxs[perm[base]],
+      activeIdxs[perm[base + 1]],
+      activeIdxs[perm[base + 2]],
+      activeIdxs[perm[base + 3]],
+    ];
+
+    score += W_SKILL   * Math.abs((skills[p0] + skills[p1]) - (skills[p2] + skills[p3]));
+    score += W_PARTNER * (partnerCount[p0][p1] + partnerCount[p2][p3]);
+    score += W_OPP     * (oppCount[p0][p2] + oppCount[p0][p3] + oppCount[p1][p2] + oppCount[p1][p3]);
+  }
+
+  return score;
+}
+
+function shuffleFY(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = (Math.random() * (i + 1)) | 0;
+    const tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+  }
+}
+
+module.exports = { generateAmericano, generateAmericanoFair };

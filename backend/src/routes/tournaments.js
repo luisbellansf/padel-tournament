@@ -4,7 +4,7 @@ const prisma = require('../lib/prisma');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { buildBalancedTeams } = require('../core/teamBalancer');
 const { roundRobin, singleElimination, groupKnockout } = require('../core/tournament');
-const { generateAmericano } = require('../core/americano');
+const { generateAmericano, generateAmericanoFair } = require('../core/americano');
 const ah = require('../lib/asyncHandler');
 
 const router = express.Router();
@@ -197,7 +197,7 @@ router.post('/:id/generate', requireAdmin, ah(async (req, res) => {
 
     const regs = await prisma.registration.findMany({
       where: { tournamentId },
-      include: { user: { select: { id: true, name: true } } },
+      include: { user: { select: { id: true, name: true, skillLevel: true } } },
     });
     if (regs.length < 4) {
       return res.status(400).json({ error: 'Americano benötigt mindestens 4 Spieler.' });
@@ -205,6 +205,11 @@ router.post('/:id/generate', requireAdmin, ah(async (req, res) => {
 
     const playerIds = regs.map((r) => r.userId);
     const numCourts = t.config?.numCourts ?? null;
+
+    // Build skill map for fair draw: use registration-level skill if set, else user's global skill
+    const skillMap = Object.fromEntries(
+      regs.map((r) => [r.userId, r.skillLevel ?? r.user.skillLevel])
+    );
 
     // Full-rotation mode: calculate how many rounds until every pairing repeats
     let numRounds;
@@ -218,7 +223,9 @@ router.post('/:id/generate', requireAdmin, ah(async (req, res) => {
     }
     const nameOf    = new Map(regs.map((r) => [r.userId, r.user.name]));
 
-    const americanoRounds = generateAmericano(playerIds, numRounds, numCourts);
+    const americanoRounds = t.config?.fairDraw
+      ? generateAmericanoFair(playerIds, skillMap, numRounds, numCourts)
+      : generateAmericano(playerIds, numRounds, numCourts);
 
     // Create per-round temporary teams and matches
     for (const round of americanoRounds) {

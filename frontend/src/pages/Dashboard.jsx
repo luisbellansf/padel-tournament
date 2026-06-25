@@ -38,7 +38,7 @@ export default function Dashboard() {
     // Americano
     winScore: 21, numCourts: 2, fullRotation: false, numRounds: 7, hideStandings: false,
     timeBasedGame: false, pointsForWin: 2, pointsForDraw: 1, allowDraw: true,
-    onlyWinner: false, pointsForWinPB: '',
+    onlyWinner: false, pointsForWinPB: '', fairDraw: false,
     // Group + KO
     numGroups: 2, advancePerGroup: 2,
   });
@@ -63,6 +63,7 @@ export default function Dashboard() {
         config.fullRotation  = form.fullRotation;
         config.hideStandings = form.hideStandings;
         config.onlyWinner    = form.onlyWinner;
+        config.fairDraw      = form.fairDraw;
         if (!form.timeBasedGame) {
           config.winScore = Number(form.winScore);
           if (form.pointsForWinPB !== '') config.pointsForWinPB = Number(form.pointsForWinPB);
@@ -298,6 +299,29 @@ export default function Dashboard() {
                   </div>
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 1 }}>
                     Rundenzahl wird beim Generieren automatisch berechnet, sodass jeder einmal mit jedem gespielt hat
+                  </div>
+                </div>
+              </label>
+              {/* Fair draw checkbox */}
+              <label style={{
+                display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
+                padding: '10px 14px', borderRadius: 10,
+                background: form.fairDraw ? '#eef2ff' : 'var(--bg)',
+                border: `1px solid ${form.fairDraw ? '#c7d2fe' : 'var(--border)'}`,
+                userSelect: 'none',
+              }}>
+                <input
+                  type="checkbox"
+                  checked={form.fairDraw}
+                  onChange={(e) => setForm({ ...form, fairDraw: e.target.checked })}
+                  style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#0025D1' }}
+                />
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.88rem', color: form.fairDraw ? '#0025D1' : 'var(--text)' }}>
+                    Faire Auslosung
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 1 }}>
+                    Paarungen werden nach Skilllevel ausgeglichen und so geplant, dass jeder möglichst selten mit denselben Spielern zusammen- oder gegeneinander spielt
                   </div>
                 </div>
               </label>
